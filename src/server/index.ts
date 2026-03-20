@@ -471,15 +471,20 @@ app.get('*', (_req, res) => {
 });
 
 async function recoverStaleScans(): Promise<void> {
-  await supabase
+  const { data: affectedJobs } = await supabase
     .from('scan_jobs')
     .update({
-      status: 'failed',
-      error_message: 'Server restart',
+      status: 'aborted',
+      error_message: 'Server restart — process interrupted; videos reset to reanalysis_needed',
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq('status', 'running');
+    .eq('status', 'running')
+    .select('id');
+
+  if (affectedJobs?.length) {
+    console.log(`Recovery: marked ${affectedJobs.length} running scan job(s) as aborted (server restart)`);
+  }
 
   const { data: staleVideos } = await supabase
     .from('videos')
