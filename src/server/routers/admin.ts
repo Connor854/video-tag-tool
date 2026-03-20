@@ -269,6 +269,159 @@ export const adminRouter = router({
       return { success: true as const, approved };
     }),
 
+  // ── Product Grouping (Phase A1) ────────────────────────────────────────────
+
+  listProductGroups: adminProcedure.query(async ({ ctx }) => {
+    const workspaceId = ctx.workspaceId;
+    const { data: groups, error } = await supabase
+      .from('product_groups')
+      .select('id, name, source, created_at, updated_at')
+      .eq('workspace_id', workspaceId)
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('listProductGroups failed:', error);
+      return { groups: [] };
+    }
+
+    const groupsWithCounts = await Promise.all(
+      (groups ?? []).map(async (g) => {
+        const { count } = await supabase
+          .from('product_group_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('product_group_id', g.id);
+        return { ...g, memberCount: count ?? 0 };
+      }),
+    );
+    return { groups: groupsWithCounts };
+  }),
+
+  createProductGroup: adminProcedure
+    .input(z.object({ name: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = ctx.workspaceId;
+      const { data, error } = await supabase
+        .from('product_groups')
+        .insert({
+          workspace_id: workspaceId,
+          name: input.name.trim(),
+          source: 'manual',
+        })
+        .select('id, name, source, created_at, updated_at')
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          return { success: false as const, error: 'A group with this name already exists' };
+        }
+        console.error('createProductGroup failed:', error);
+        return { success: false as const, error: error.message };
+      }
+      return { success: true as const, group: data };
+    }),
+
+  updateProductGroup: adminProcedure
+    .input(z.object({ id: z.string().uuid(), name: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = ctx.workspaceId;
+      const { data, error } = await supabase
+        .from('product_groups')
+        .update({ name: input.name.trim(), updated_at: new Date().toISOString() })
+        .eq('id', input.id)
+        .eq('workspace_id', workspaceId)
+        .select('id, name, source, created_at, updated_at')
+        .single();
+
+      if (error || !data) {
+        return { success: false as const, error: 'Product group not found' };
+      }
+      return { success: true as const, group: data };
+    }),
+
+  deleteProductGroup: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = ctx.workspaceId;
+      const { error } = await supabase
+        .from('product_groups')
+        .delete()
+        .eq('id', input.id)
+        .eq('workspace_id', workspaceId);
+
+      if (error) {
+        console.error('deleteProductGroup failed:', error);
+        return { success: false as const, error: error.message };
+      }
+      return { success: true as const };
+    }),
+
+  getProductsForGroup: adminProcedure
+    .input(z.object({ groupId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const workspaceId = ctx.workspaceId;
+      const { data: members, error } = await supabase
+        .from('product_group_members')
+        .select('product_id')
+        .eq('product_group_id', input.groupId);
+
+      if (error || !members) return { productIds: [] };
+
+      const group = await supabase
+        .from('product_groups')
+        .select('workspace_id')
+        .eq('id', input.groupId)
+        .eq('workspace_id', workspaceId)
+        .single();
+
+      if (group.error || !group.data) return { productIds: [] };
+
+      const productIds = members.map((m) => m.product_id);
+      return { productIds };
+    }),
+
+  setProductGroupMembers: adminProcedure
+    .input(z.object({ groupId: z.string().uuid(), productIds: z.array(z.string().uuid()) }))
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = ctx.workspaceId;
+      const group = await supabase
+        .from('product_groups')
+        .select('id')
+        .eq('id', input.groupId)
+        .eq('workspace_id', workspaceId)
+        .single();
+
+      if (group.error || !group.data) {
+        return { success: false as const, error: 'Product group not found' };
+      }
+
+      const { error: deleteErr } = await supabase
+        .from('product_group_members')
+        .delete()
+        .eq('product_group_id', input.groupId);
+
+      if (deleteErr) {
+        console.error('setProductGroupMembers delete failed:', deleteErr);
+        return { success: false as const, error: deleteErr.message };
+      }
+
+      if (input.productIds.length > 0) {
+        const rows = input.productIds.map((product_id) => ({
+          product_id,
+          product_group_id: input.groupId,
+        }));
+        const { error: insertErr } = await supabase
+          .from('product_group_members')
+          .insert(rows);
+
+        if (insertErr) {
+          console.error('setProductGroupMembers insert failed:', insertErr);
+          return { success: false as const, error: insertErr.message };
+        }
+      }
+
+      return { success: true as const };
+    }),
+
   getSettings: adminProcedure.query(async ({ ctx }) => {
     const workspaceId = ctx.workspaceId;
     const creds = await getWorkspaceCredentials(workspaceId);

@@ -3,23 +3,53 @@ import { router, workspaceProcedure } from '../trpc.js';
 import { supabase } from '../../lib/supabase.js';
 import type { Video, VideoMoment } from '../../shared/types.js';
 
-// ── Product family normalization ───────────────────────────────────
-// Maps the 409 free-form AI product strings down to canonical families.
-// `pattern` is matched case-insensitively as a substring against the
-// text representation of the products array.
-const PRODUCT_FAMILIES = [
-  { label: 'Hammock', pattern: 'hammock' },
-  { label: 'Picnic Blanket', pattern: 'picnic blanket' },
-  { label: 'Tote Bag', pattern: 'tote bag' },
-  { label: 'Travel Backpack', pattern: 'travel backpack' },
-  { label: 'Foldable Backpack', pattern: 'foldable backpack' },
-  { label: 'Single Beach Towel', pattern: 'beach towel' },
-  { label: 'Double Beach Towel', pattern: 'beach blanket' },
-  { label: 'Hooded Towel', pattern: 'hooded towel' },
-  { label: 'Protein Bars', pattern: 'protein bar' },
-  { label: 'Bug Net', pattern: 'bug net' },
-  { label: 'Tarp', pattern: 'tarp' },
-] as const;
+/** Resolve product group names to product names via product_group_members. */
+async function resolveGroupNamesToProductNames(
+  workspaceId: string,
+  groupNames: string[],
+): Promise<string[]> {
+  if (groupNames.length === 0) return [];
+  const { data: groups } = await supabase
+    .from('product_groups')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .in('name', groupNames);
+  if (!groups?.length) return [];
+  const groupIds = groups.map((g) => g.id);
+  const { data: members } = await supabase
+    .from('product_group_members')
+    .select('product_id')
+    .in('product_group_id', groupIds);
+  if (!members?.length) return [];
+  const productIds = [...new Set(members.map((m) => m.product_id))];
+  const { data: products } = await supabase
+    .from('products')
+    .select('name')
+    .eq('workspace_id', workspaceId)
+    .in('id', productIds);
+  return (products ?? []).map((p) => p.name as string).filter(Boolean);
+}
+
+/** Resolve product group names to product ids via product_group_members. */
+async function resolveGroupNamesToProductIds(
+  workspaceId: string,
+  groupNames: string[],
+): Promise<string[]> {
+  if (groupNames.length === 0) return [];
+  const { data: groups } = await supabase
+    .from('product_groups')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .in('name', groupNames);
+  if (!groups?.length) return [];
+  const groupIds = groups.map((g) => g.id);
+  const { data: members } = await supabase
+    .from('product_group_members')
+    .select('product_id')
+    .in('product_group_id', groupIds);
+  if (!members?.length) return [];
+  return [...new Set(members.map((m) => m.product_id))];
+}
 
 interface SupabaseVideo {
   id: string;
@@ -168,56 +198,34 @@ export const videoRouter = router({
         );
       }
 
-      // Product family filter — expand family names to matching raw product strings
+      // Product filter — resolve group names to product names via product_group_members
       if (input.products?.length) {
-        // Fetch raw product strings to classify
-        const { data: filterData } = await supabase.rpc('get_filter_options', { p_workspace_id: workspaceId });
-        const rawProducts = (filterData?.products ?? []) as string[];
-
-        // Collect all raw product strings matching selected families
-        const matchingProducts: string[] = [];
-        for (const familyName of input.products) {
-          const fam = PRODUCT_FAMILIES.find((f) => f.label === familyName);
-          if (fam) {
-            for (const raw of rawProducts) {
-              if (raw.toLowerCase().includes(fam.pattern)) {
-                matchingProducts.push(raw);
-              }
-            }
-          }
-        }
-
+        const matchingProducts = await resolveGroupNamesToProductNames(workspaceId, input.products);
         if (matchingProducts.length) {
           query = query.overlaps('products', matchingProducts);
         }
       }
 
-      // Colourway filter — find Shopify product names matching the colourway + family,
-      // then match those against the video's products array
+      // Colourway filter — products matching colourway, optionally narrowed by selected groups
       if (input.colourways?.length) {
-        const { data: shopifyProducts } = await supabase
+        let productIds: string[] | null = null;
+        if (input.products?.length) {
+          productIds = await resolveGroupNamesToProductIds(workspaceId, input.products);
+          if (productIds.length === 0) productIds = null;
+        }
+        let shopifyQuery = supabase
           .from('products')
-          .select('name, base_product, colorway')
+          .select('name')
           .eq('workspace_id', workspaceId)
           .eq('active', true)
           .not('approved_at', 'is', null)
           .in('colorway', input.colourways);
-
+        if (productIds?.length) {
+          shopifyQuery = shopifyQuery.in('id', productIds);
+        }
+        const { data: shopifyProducts } = await shopifyQuery;
         if (shopifyProducts?.length) {
-          // If product families are also selected, narrow to those families
-          let filtered = shopifyProducts;
-          if (input.products?.length) {
-            const selectedFamilies = input.products
-              .map((name) => PRODUCT_FAMILIES.find((f) => f.label === name))
-              .filter(Boolean);
-            filtered = shopifyProducts.filter((row) =>
-              selectedFamilies.some((fam) =>
-                row.base_product?.toLowerCase().includes(fam!.pattern) ||
-                row.name?.toLowerCase().includes(fam!.pattern),
-              ),
-            );
-          }
-          const productNames = [...new Set(filtered.map((r) => r.name as string))];
+          const productNames = shopifyProducts.map((r) => r.name as string).filter(Boolean);
           if (productNames.length) {
             query = query.overlaps('products', productNames);
           }
@@ -311,10 +319,12 @@ export const videoRouter = router({
   filters: workspaceProcedure.query(async ({ ctx }): Promise<import('../../shared/types.js').VideoFilters> => {
     const workspaceId = ctx.workspaceId;
 
-    // RPC for products, scenes, shot_types, audio_types, content_tags
     const rpcPromise = supabase.rpc('get_filter_options', { p_workspace_id: workspaceId });
-
-    // Additional distinct queries for fields not in the RPC (read-only, no schema change)
+    const groupsPromise = supabase
+      .from('product_groups')
+      .select('name')
+      .eq('workspace_id', workspaceId)
+      .order('name', { ascending: true });
     const lightingPromise = supabase
       .from('videos')
       .select('lighting')
@@ -323,7 +333,6 @@ export const videoRouter = router({
       .not('lighting', 'is', null)
       .not('drive_id', 'is', null)
       .limit(1000);
-
     const motionPromise = supabase
       .from('videos')
       .select('motion')
@@ -332,7 +341,6 @@ export const videoRouter = router({
       .not('motion', 'is', null)
       .not('drive_id', 'is', null)
       .limit(1000);
-
     const peoplePromise = supabase
       .from('videos')
       .select('people_description')
@@ -342,27 +350,22 @@ export const videoRouter = router({
       .not('drive_id', 'is', null)
       .limit(1000);
 
-    const [rpcResult, lightingResult, motionResult, peopleResult] =
-      await Promise.all([rpcPromise, lightingPromise, motionPromise, peoplePromise]);
+    const [rpcResult, groupsResult, lightingResult, motionResult, peopleResult] =
+      await Promise.all([rpcPromise, groupsPromise, lightingPromise, motionPromise, peoplePromise]);
 
     const data = rpcResult.data;
     if (rpcResult.error || !data) {
       console.error('Filter RPC error:', rpcResult.error);
     }
 
-    // Extract distinct values from raw rows
     const distinctLighting = [...new Set((lightingResult.data ?? []).map((r) => r.lighting as string))].sort();
     const distinctMotion = [...new Set((motionResult.data ?? []).map((r) => r.motion as string))].sort();
     const distinctPeople = [...new Set((peopleResult.data ?? []).map((r) => r.people_description as string))].sort();
 
-    // Normalize raw AI product strings → canonical families
-    const rawProducts = (data?.products ?? []) as string[];
-    const activeProductFamilies = PRODUCT_FAMILIES
-      .filter((fam) => rawProducts.some((raw) => raw.toLowerCase().includes(fam.pattern)))
-      .map((fam) => fam.label);
+    const productGroupNames = (groupsResult.data ?? []).map((g) => g.name as string).filter(Boolean);
 
     return {
-      products: activeProductFamilies,
+      products: productGroupNames,
       scenes: (data?.scenes ?? []).sort(),
       shotTypes: (data?.shot_types ?? []).sort(),
       audioTypes: (data?.audio_types ?? []).sort(),
@@ -373,36 +376,24 @@ export const videoRouter = router({
     };
   }),
 
-  // Dynamic colourway options scoped to selected product families
   colourwaysForProducts: workspaceProcedure
     .input(z.object({ products: z.array(z.string()).min(1) }))
     .query(async ({ ctx, input }) => {
       const workspaceId = ctx.workspaceId;
+      const productIds = await resolveGroupNamesToProductIds(workspaceId, input.products);
+      if (productIds.length === 0) return [];
 
-      // Query the products table, filtering base_product or name by family patterns
       const { data, error } = await supabase
         .from('products')
-        .select('base_product, colorway, name')
+        .select('colorway')
         .eq('workspace_id', workspaceId)
         .eq('active', true)
         .not('approved_at', 'is', null)
-        .not('colorway', 'is', null);
+        .not('colorway', 'is', null)
+        .in('id', productIds);
 
       if (error || !data) return [];
-
-      // Keep only rows whose base_product or name matches a selected family
-      const selectedFamilies = input.products
-        .map((name) => PRODUCT_FAMILIES.find((f) => f.label === name))
-        .filter(Boolean);
-
-      const matching = data.filter((row) =>
-        selectedFamilies.some((fam) =>
-          row.base_product?.toLowerCase().includes(fam!.pattern) ||
-          row.name?.toLowerCase().includes(fam!.pattern),
-        ),
-      );
-
-      return [...new Set(matching.map((r) => r.colorway as string))].sort();
+      return [...new Set(data.map((r) => r.colorway as string))].sort();
     }),
 
   stats: workspaceProcedure.query(async ({ ctx }) => {

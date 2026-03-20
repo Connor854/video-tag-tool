@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Check, Pencil } from 'lucide-react';
+import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Check, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { trpc } from '../trpc';
 import PipelineMonitor from './PipelineMonitor';
 
@@ -126,6 +126,79 @@ export default function AdminPage({ onBack }: AdminPageProps) {
     },
     onError: (err) => setCatalogError(err.message ?? 'Bulk approve failed'),
   });
+
+  // Product Groups
+  const [newGroupName, setNewGroupName] = useState('');
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [membersModalGroupId, setMembersModalGroupId] = useState<string | null>(null);
+  const [groupsError, setGroupsError] = useState<string | null>(null);
+
+  const listGroupsQuery = trpc.admin.listProductGroups.useQuery();
+  const groups = listGroupsQuery.data?.groups ?? [];
+  const createGroupMutation = trpc.admin.createProductGroup.useMutation({
+    onSuccess: (data) => {
+      if (data?.success === false) {
+        setGroupsError(data.error ?? 'Create failed');
+      } else {
+        setGroupsError(null);
+        setNewGroupName('');
+        utils.admin.listProductGroups.invalidate();
+        utils.video.filters.invalidate();
+      }
+    },
+    onError: (err) => setGroupsError(err.message ?? 'Create failed'),
+  });
+  const updateGroupMutation = trpc.admin.updateProductGroup.useMutation({
+    onSuccess: (data) => {
+      if (data?.success === false) {
+        setGroupsError(data.error ?? 'Rename failed');
+      } else {
+        setGroupsError(null);
+        setRenamingGroupId(null);
+        setRenameDraft('');
+        utils.admin.listProductGroups.invalidate();
+        utils.video.filters.invalidate();
+      }
+    },
+    onError: (err) => setGroupsError(err.message ?? 'Rename failed'),
+  });
+  const deleteGroupMutation = trpc.admin.deleteProductGroup.useMutation({
+    onSuccess: (data) => {
+      if (data?.success === false) {
+        setGroupsError(data.error ?? 'Delete failed');
+      } else {
+        setGroupsError(null);
+        utils.admin.listProductGroups.invalidate();
+        utils.video.filters.invalidate();
+      }
+    },
+    onError: (err) => setGroupsError(err.message ?? 'Delete failed'),
+  });
+  const setMembersMutation = trpc.admin.setProductGroupMembers.useMutation({
+    onSuccess: (data, variables) => {
+      if (data?.success === false) {
+        setGroupsError(data.error ?? 'Update members failed');
+      } else {
+        setGroupsError(null);
+        setMembersModalGroupId(null);
+        utils.admin.listProductGroups.invalidate();
+        if (variables?.groupId) utils.admin.getProductsForGroup.invalidate({ groupId: variables.groupId });
+      }
+    },
+    onError: (err) => setGroupsError(err.message ?? 'Update members failed'),
+  });
+
+  const productsForGroupQuery = trpc.admin.getProductsForGroup.useQuery(
+    { groupId: membersModalGroupId! },
+    { enabled: !!membersModalGroupId },
+  );
+  const approvedProductsQuery = trpc.admin.listProducts.useQuery(
+    { status: 'approved' },
+    { enabled: !!membersModalGroupId },
+  );
+  const approvedProducts = (approvedProductsQuery.data?.products ?? []) as ProductRow[];
+  const currentMemberIds = new Set(productsForGroupQuery.data?.productIds ?? []);
 
   const products = (listProductsQuery.data?.products ?? []) as ProductRow[];
   const pendingIds = products.filter((p) => !p.approved_at).map((p) => p.id);
@@ -709,6 +782,210 @@ export default function AdminPage({ onBack }: AdminPageProps) {
             </div>
           )}
         </div>
+
+        {/* Product Groups */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+          <h2 className="font-heading text-xl font-semibold text-gray-800 mb-4">
+            Product Groups
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Create groups of approved products for use as filters in video search. Only approved products can be added.
+          </p>
+
+          <div className="flex flex-wrap gap-2 mb-4">
+            <input
+              type="text"
+              placeholder="New group name"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-gray-200 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+            />
+            <button
+              onClick={() => {
+                const name = newGroupName.trim();
+                if (!name) return;
+                createGroupMutation.mutate({ name });
+              }}
+              disabled={!newGroupName.trim() || createGroupMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-nakie-teal text-white rounded-lg text-sm font-medium hover:bg-nakie-teal/90 disabled:opacity-50 cursor-pointer"
+            >
+              {createGroupMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+              Create Group
+            </button>
+          </div>
+
+          {groupsError && (
+            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4">
+              <AlertCircle size={16} className="flex-shrink-0" />
+              {groupsError}
+            </div>
+          )}
+
+          {listGroupsQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-6">
+              <Loader2 size={16} className="animate-spin" />
+              Loading groups…
+            </div>
+          ) : groups.length === 0 ? (
+            <p className="text-sm text-gray-500 py-6">
+              No product groups yet. Create one above to use as a filter in video search.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {groups.map((g) => (
+                <li
+                  key={g.id}
+                  className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg border border-gray-100 hover:bg-gray-50/50"
+                >
+                  {renamingGroupId === g.id ? (
+                    <>
+                      <input
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        placeholder="Group name"
+                        className="flex-1 px-2 py-1 rounded border border-gray-200 text-sm"
+                        autoFocus
+                      />
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => {
+                            const name = renameDraft.trim();
+                            if (name) updateGroupMutation.mutate({ id: g.id, name });
+                          }}
+                          disabled={!renameDraft.trim() || updateGroupMutation.isPending}
+                          className="px-2 py-1 bg-nakie-green text-white rounded text-xs font-medium disabled:opacity-50 cursor-pointer"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRenamingGroupId(null);
+                            setRenameDraft('');
+                          }}
+                          className="px-2 py-1 border border-gray-200 rounded text-xs cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-gray-800">{g.name}</span>
+                      <span className="text-xs text-gray-500">({g.memberCount} products)</span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => {
+                            setMembersModalGroupId(g.id);
+                          }}
+                          className="p-1.5 text-gray-500 hover:bg-gray-100 rounded cursor-pointer"
+                          title="Edit members"
+                        >
+                          <Users size={14} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRenamingGroupId(g.id);
+                            setRenameDraft(g.name);
+                          }}
+                          className="p-1.5 text-gray-500 hover:bg-gray-100 rounded cursor-pointer"
+                          title="Rename"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete group "${g.name}"?`)) {
+                              deleteGroupMutation.mutate({ id: g.id });
+                            }
+                          }}
+                          disabled={deleteGroupMutation.isPending}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded cursor-pointer"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Edit Members Modal */}
+        {membersModalGroupId && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                <h3 className="font-heading text-lg font-semibold text-gray-800">
+                  Edit group members
+                </h3>
+                <button
+                  onClick={() => setMembersModalGroupId(null)}
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto flex-1">
+                <p className="text-sm text-gray-600 mb-3">
+                  Select approved products to include in this group:
+                </p>
+                {approvedProductsQuery.isLoading || productsForGroupQuery.isLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500 py-8">
+                    <Loader2 size={16} className="animate-spin" />
+                    Loading…
+                  </div>
+                ) : approvedProducts.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-6">
+                    No approved products. Approve products in the Product Catalog first.
+                  </p>
+                ) : (
+                  <ul className="space-y-2 max-h-64 overflow-y-auto">
+                    {approvedProducts.map((p) => (
+                      <li key={p.id} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`member-${p.id}`}
+                          checked={currentMemberIds.has(p.id)}
+                          onChange={(e) => {
+                            const next = new Set(currentMemberIds);
+                            if (e.target.checked) {
+                              next.add(p.id);
+                            } else {
+                              next.delete(p.id);
+                            }
+                            setMembersMutation.mutate({
+                              groupId: membersModalGroupId,
+                              productIds: [...next],
+                            });
+                          }}
+                          disabled={setMembersMutation.isPending}
+                          className="rounded border-gray-300"
+                        />
+                        <label htmlFor={`member-${p.id}`} className="text-sm cursor-pointer flex-1">
+                          {p.name}
+                          {p.colorway && (
+                            <span className="text-gray-500 ml-1">({p.colorway})</span>
+                          )}
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="p-4 border-t border-gray-100">
+                <button
+                  onClick={() => setMembersModalGroupId(null)}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
