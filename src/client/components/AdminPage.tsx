@@ -32,7 +32,28 @@ export default function AdminPage({ onBack }: AdminPageProps) {
   const [shopifyClientSecret, setShopifyClientSecret] = useState('');
   const [shopifyAccessToken, setShopifyAccessToken] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
+  const [shopifyOAuthMsg, setShopifyOAuthMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [initialized, setInitialized] = useState(false);
+
+  // Handle Shopify OAuth callback query params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get('shopify_oauth');
+    if (oauth === 'success') {
+      setShopifyOAuthMsg({ type: 'success', text: 'Shopify connected successfully.' });
+      params.delete('shopify_oauth');
+      const next = params.toString() ? `?${params}` : '';
+      window.history.replaceState(null, '', window.location.pathname + next);
+      utils.admin.getSettings.invalidate();
+    } else if (oauth === 'error') {
+      const reason = params.get('reason') ?? 'unknown';
+      setShopifyOAuthMsg({ type: 'error', text: `Shopify connection failed: ${reason}` });
+      params.delete('shopify_oauth');
+      params.delete('reason');
+      const next = params.toString() ? `?${params}` : '';
+      window.history.replaceState(null, '', window.location.pathname + next);
+    }
+  }, [utils.admin.getSettings]);
 
   const handleAdminSecretChange = (value: string) => {
     setAdminSecret(value);
@@ -71,6 +92,24 @@ export default function AdminPage({ onBack }: AdminPageProps) {
   });
 
   const utils = trpc.useUtils();
+  const [connectShopifyPending, setConnectShopifyPending] = useState(false);
+  const handleConnectShopify = async () => {
+    const shop = shopifyStoreUrl.trim();
+    if (!shop) return;
+    setConnectShopifyPending(true);
+    try {
+      const result = await utils.admin.getShopifyOAuthUrl.fetch({ shop });
+      if (result.ok) {
+        window.location.href = result.url;
+      } else {
+        setShopifyOAuthMsg({ type: 'error', text: result.error });
+      }
+    } catch (e) {
+      setShopifyOAuthMsg({ type: 'error', text: (e as Error).message ?? 'Failed to get OAuth URL' });
+    } finally {
+      setConnectShopifyPending(false);
+    }
+  };
   const shopifySyncMutation = trpc.admin.syncShopify.useMutation({
     onSuccess: () => utils.admin.listProducts.invalidate(),
   });
@@ -375,6 +414,57 @@ export default function AdminPage({ onBack }: AdminPageProps) {
               </p>
             </div>
 
+            {/* Shopify OAuth Connect */}
+            <div className="flex flex-col gap-2">
+              {shopifyOAuthMsg && (
+                <div
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+                    shopifyOAuthMsg.type === 'success'
+                      ? 'bg-green-50 text-green-800'
+                      : 'bg-red-50 text-red-800'
+                  }`}
+                >
+                  {shopifyOAuthMsg.type === 'success' ? (
+                    <CheckCircle size={16} />
+                  ) : (
+                    <AlertCircle size={16} />
+                  )}
+                  {shopifyOAuthMsg.text}
+                </div>
+              )}
+              {settingsQuery.data?.shopifyConnectedVia === 'oauth' ? (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 text-green-800 text-sm">
+                  <ShieldCheck size={16} />
+                  Connected via OAuth
+                  {settingsQuery.data.shopifyStoreUrl && (
+                    <span className="text-green-600">({settingsQuery.data.shopifyStoreUrl})</span>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleConnectShopify}
+                  disabled={connectShopifyPending || !shopifyStoreUrl.trim()}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-nakie-teal text-white rounded-lg text-sm font-medium hover:bg-nakie-teal/90 disabled:opacity-50 transition-colors cursor-pointer w-fit"
+                >
+                  {connectShopifyPending ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <ShieldCheck size={16} />
+                  )}
+                  Connect Shopify
+                </button>
+              )}
+            </div>
+
+            <details
+              className={`text-sm ${settingsQuery.data?.shopifyConnectedVia === 'oauth' ? 'opacity-75' : ''}`}
+              open={settingsQuery.data?.shopifyConnectedVia !== 'oauth'}
+            >
+              <summary className="cursor-pointer text-xs text-gray-400 hover:text-gray-600">
+                Manual credentials (fallback)
+              </summary>
+            <div className="mt-2 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Shopify Client ID
@@ -423,6 +513,8 @@ export default function AdminPage({ onBack }: AdminPageProps) {
                   Only needed if you have an existing custom app with a permanent access token
                 </p>
               </div>
+            </details>
+            </div>
             </details>
 
             <div className="flex items-center gap-3">

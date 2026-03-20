@@ -10,7 +10,10 @@ import { trpc } from './trpc';
 const PAGE_SIZE = 24;
 
 export default function App() {
-  const [page, setPage] = useState('search');
+  const [page, setPage] = useState(() => {
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    return params.has('shopify_oauth') ? 'admin' : 'search';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [allVideos, setAllVideos] = useState<any[]>([]);

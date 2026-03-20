@@ -27,6 +27,8 @@ export interface WorkspaceCredentials {
   /** Cached token from client credentials exchange */
   shopifyCachedToken?: string;
   shopifyCachedTokenExpiresAt?: string;
+  /** How Shopify was connected: 'oauth' | 'client_credentials' | 'manual_token' */
+  shopifyConnectedVia?: string;
 }
 
 // ============================================================
@@ -112,6 +114,7 @@ export async function getWorkspaceCredentials(
       shopifyConn?.credentials['cached_access_token'] ?? undefined,
     shopifyCachedTokenExpiresAt:
       shopifyConn?.credentials['cached_token_expires_at'] ?? undefined,
+    shopifyConnectedVia: shopifyConn?.metadata['connected_via'] ?? undefined,
   };
 }
 

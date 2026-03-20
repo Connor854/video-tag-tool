@@ -434,8 +434,32 @@ export const adminRouter = router({
       shopifyClientId: creds.shopifyClientId ?? '',
       shopifyClientSecret: creds.shopifyClientSecret ?? '',
       shopifyAccessToken: creds.shopifyAccessToken ?? '',
+      shopifyConnectedVia: creds.shopifyConnectedVia ?? '',
+      workspaceId,
     };
   }),
+
+  getShopifyOAuthUrl: adminProcedure
+    .input(z.object({ shop: z.string().min(1) }))
+    .query(({ ctx, input }) => {
+      const clientId = process.env['SHOPIFY_CLIENT_ID'];
+      const appUrl = process.env['APP_URL'] ?? 'http://localhost:3001';
+      if (!clientId) {
+        return { ok: false as const, error: 'SHOPIFY_CLIENT_ID not configured' };
+      }
+      let shop = input.shop.trim().toLowerCase();
+      if (!shop.endsWith('.myshopify.com')) {
+        shop = shop.replace(/\.(com|net|org)$/, '').replace(/^https?:\/\//, '').split('/')[0] || shop;
+        shop = `${shop}.myshopify.com`;
+      }
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$/.test(shop)) {
+        return { ok: false as const, error: 'Invalid store URL' };
+      }
+      const redirectUri = `${appUrl.replace(/\/$/, '')}/auth/shopify/callback`;
+      const scope = 'read_products,read_inventory';
+      const url = `https://${shop}/admin/oauth/authorize?client_id=${encodeURIComponent(clientId)}&scope=${encodeURIComponent(scope)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(ctx.workspaceId)}`;
+      return { ok: true as const, url };
+    }),
 
   saveSettings: adminProcedure
     .input(
