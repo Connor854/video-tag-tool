@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Check, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { trpc } from '../trpc';
 import PipelineMonitor from './PipelineMonitor';
@@ -132,6 +132,8 @@ export default function AdminPage({ onBack }: AdminPageProps) {
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [membersModalGroupId, setMembersModalGroupId] = useState<string | null>(null);
+  const [stagedMemberIds, setStagedMemberIds] = useState<Set<string>>(new Set());
+  const membersModalInitializedRef = useRef<string | null>(null);
   const [groupsError, setGroupsError] = useState<string | null>(null);
 
   const listGroupsQuery = trpc.admin.listProductGroups.useQuery();
@@ -198,7 +200,21 @@ export default function AdminPage({ onBack }: AdminPageProps) {
     { enabled: !!membersModalGroupId },
   );
   const approvedProducts = (approvedProductsQuery.data?.products ?? []) as ProductRow[];
-  const currentMemberIds = new Set(productsForGroupQuery.data?.productIds ?? []);
+
+  // Initialize staged selection when Edit members modal opens (or switches groups)
+  useEffect(() => {
+    if (!membersModalGroupId) {
+      membersModalInitializedRef.current = null;
+      return;
+    }
+    const productIds = productsForGroupQuery.data?.productIds ?? [];
+    const hasData = productsForGroupQuery.data !== undefined;
+    const notYetInitialized = membersModalInitializedRef.current !== membersModalGroupId;
+    if (hasData && notYetInitialized) {
+      membersModalInitializedRef.current = membersModalGroupId;
+      setStagedMemberIds(new Set(productIds));
+    }
+  }, [membersModalGroupId, productsForGroupQuery.data]);
 
   const products = (listProductsQuery.data?.products ?? []) as ProductRow[];
   const pendingIds = products.filter((p) => !p.approved_at).map((p) => p.id);
@@ -948,20 +964,16 @@ export default function AdminPage({ onBack }: AdminPageProps) {
                         <input
                           type="checkbox"
                           id={`member-${p.id}`}
-                          checked={currentMemberIds.has(p.id)}
+                          checked={stagedMemberIds.has(p.id)}
                           onChange={(e) => {
-                            const next = new Set(currentMemberIds);
+                            const next = new Set(stagedMemberIds);
                             if (e.target.checked) {
                               next.add(p.id);
                             } else {
                               next.delete(p.id);
                             }
-                            setMembersMutation.mutate({
-                              groupId: membersModalGroupId,
-                              productIds: [...next],
-                            });
+                            setStagedMemberIds(next);
                           }}
-                          disabled={setMembersMutation.isPending}
                           className="rounded border-gray-300"
                         />
                         <label htmlFor={`member-${p.id}`} className="text-sm cursor-pointer flex-1">
@@ -975,12 +987,26 @@ export default function AdminPage({ onBack }: AdminPageProps) {
                   </ul>
                 )}
               </div>
-              <div className="p-4 border-t border-gray-100">
+              <div className="p-4 border-t border-gray-100 flex gap-2">
                 <button
                   onClick={() => setMembersModalGroupId(null)}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer"
+                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer"
                 >
-                  Done
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!membersModalGroupId) return;
+                    setMembersMutation.mutate({
+                      groupId: membersModalGroupId,
+                      productIds: [...stagedMemberIds],
+                    });
+                  }}
+                  disabled={setMembersMutation.isPending}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-nakie-teal text-white rounded-lg text-sm font-medium hover:bg-nakie-teal/90 disabled:opacity-50 cursor-pointer"
+                >
+                  {setMembersMutation.isPending && <Loader2 size={14} className="animate-spin" />}
+                  Update group members
                 </button>
               </div>
             </div>
