@@ -784,34 +784,44 @@ export async function analyzeOneVideo(
     return false;
   }
 
-  // Write product junction rows
-  await matchProducts(workspaceId, videoId, analysis.products);
+  // Write product junction rows and moments — wrap in try/catch so a single file
+  // never crashes the worker or fails the whole job
+  try {
+    await matchProducts(workspaceId, videoId, analysis.products);
 
-  // Write moments
-  if (analysis.moments.length > 0) {
-    const momentRows = analysis.moments
-      .filter((m) => m.label && m.start_seconds >= 0)
-      .map((m) => ({
-        video_id: videoId,
-        workspace_id: workspaceId,
-        start_seconds: m.start_seconds,
-        end_seconds: m.end_seconds || null,
-        label: m.label,
-        description: m.description || null,
-        products_visible: m.products_visible?.length ? m.products_visible : null,
-      }));
+    if (analysis.moments.length > 0) {
+      const momentRows = analysis.moments
+        .filter((m) => m.label && m.start_seconds >= 0)
+        .map((m) => ({
+          video_id: videoId,
+          workspace_id: workspaceId,
+          start_seconds: m.start_seconds,
+          end_seconds: m.end_seconds || null,
+          label: m.label,
+          description: m.description || null,
+          products_visible: m.products_visible?.length ? m.products_visible : null,
+        }));
 
-    if (momentRows.length > 0) {
-      const { error: momentError } = await supabase.from('video_moments').insert(momentRows);
-      if (momentError) {
-        console.error(`Failed to insert moments for ${fileName}:`, momentError);
+      if (momentRows.length > 0) {
+        const { error: momentError } = await supabase.from('video_moments').insert(momentRows);
+        if (momentError) {
+          console.error(`Failed to insert moments for ${fileName}:`, momentError);
+        }
       }
     }
+  } catch (postErr) {
+    console.error(`Post-analysis write failed for ${fileName}:`, postErr);
+    await supabase.from('videos').update({
+      status: 'error',
+      processing_error: postErr instanceof Error ? postErr.message : String(postErr),
+    }).eq('id', videoId);
+    return false;
   }
 
+  const tagsStr = (analysis.content_tags ?? []).join(',');
   console.log(
     `Analyzed: ${fileName} [${usedFullVideo ? 'video' : 'thumbnail'}] ` +
-    `products=${productNames.length} moments=${analysis.moments.length} tags=${analysis.content_tags.join(',')}`,
+    `products=${productNames.length} moments=${analysis.moments.length} tags=${tagsStr}`,
   );
   return true;
 }
@@ -933,16 +943,20 @@ export async function startScan(
 
   let syncResult: SyncResult = { totalInDrive: 0, newFiles: 0, alreadySynced: 0 };
   let triageSummary: TriageSummary = { total: 0, triaged: 0, excluded: 0 };
+  let analyzed = 0;
+  let errors = 0;
+  const startMs = Date.now();
 
-  if (!queueOnly) {
-    // Phase 1: Sync
-    syncResult = await syncDriveFiles(workspaceId);
+  try {
+    if (!queueOnly) {
+      // Phase 1: Sync
+      syncResult = await syncDriveFiles(workspaceId);
 
-    // Phase 1b: Triage
-    triageSummary = await triageVideos(workspaceId);
-  }
+      // Phase 1b: Triage
+      triageSummary = await triageVideos(workspaceId);
+    }
 
-  // Phase 2: Count total queue size for progress tracking
+    // Phase 2: Count total queue size for progress tracking
   const { count: totalQueued } = await supabase
     .from('videos')
     .select('id', { count: 'exact', head: true })
@@ -957,8 +971,6 @@ export async function startScan(
   await updateScanJobProgress(jobId, { progress: 0, total: totalToProcess });
 
   // Shared counters (safe with cooperative async — no true parallelism in Node)
-  let analyzed = 0;
-  let errors = 0;
   let claimed = 0;
 
   /**
@@ -1133,7 +1145,6 @@ export async function startScan(
 
   // ── Supervisor: launch workers with stagger, monitor heartbeats, respawn crashes ──
 
-  const startMs = Date.now();
   const numWorkers = Math.min(workers, totalToProcess || 1);
   const respawnCounts = new Map<number, number>(); // workerId → respawn count
 
@@ -1201,15 +1212,19 @@ export async function startScan(
   await Promise.all(supervisorPromises);
 
   clearInterval(heartbeatTimer);
-  const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
 
-  if (scanAborted) {
-    await abortScanJob(jobId, analyzed + errors);
-  } else {
+    if (scanAborted) {
+      await abortScanJob(jobId, analyzed + errors);
+    } else {
+      await completeScanJob(jobId, analyzed + errors);
+    }
+  } catch (err) {
+    console.error('Scan error (completing with partial progress):', err);
     await completeScanJob(jobId, analyzed + errors);
   }
   clearProductCache();
 
+  const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1);
   console.log(
     `Scan complete in ${elapsedSec}s. Workers: ${workers}, Analyzed: ${analyzed}, ` +
     `Errors: ${errors}, Excluded by triage: ${triageSummary.excluded}`,
