@@ -132,6 +132,7 @@ export default function AdminPage({ onBack }: AdminPageProps) {
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [membersModalGroupId, setMembersModalGroupId] = useState<string | null>(null);
+  const [membersSearch, setMembersSearch] = useState('');
   const [stagedMemberIds, setStagedMemberIds] = useState<Set<string>>(new Set());
   const membersModalInitializedRef = useRef<string | null>(null);
   const [groupsError, setGroupsError] = useState<string | null>(null);
@@ -205,6 +206,7 @@ export default function AdminPage({ onBack }: AdminPageProps) {
   useEffect(() => {
     if (!membersModalGroupId) {
       membersModalInitializedRef.current = null;
+      setMembersSearch('');
       return;
     }
     const productIds = productsForGroupQuery.data?.productIds ?? [];
@@ -215,6 +217,15 @@ export default function AdminPage({ onBack }: AdminPageProps) {
       setStagedMemberIds(new Set(productIds));
     }
   }, [membersModalGroupId, productsForGroupQuery.data]);
+
+  const matchesProductSearch = (p: ProductRow, q: string): boolean => {
+    if (!q.trim()) return true;
+    const lower = q.trim().toLowerCase();
+    const fields = [p.name, p.base_product, p.category, p.colorway].filter(Boolean).map(String);
+    return fields.some((f) => f.toLowerCase().includes(lower));
+  };
+  const visibleProducts = approvedProducts.filter((p) => matchesProductSearch(p, membersSearch));
+  const visibleProductIds = new Set(visibleProducts.map((p) => p.id));
 
   const products = (listProductsQuery.data?.products ?? []) as ProductRow[];
   const pendingIds = products.filter((p) => !p.approved_at).map((p) => p.id);
@@ -958,33 +969,68 @@ export default function AdminPage({ onBack }: AdminPageProps) {
                     No approved products. Approve products in the Product Catalog first.
                   </p>
                 ) : (
-                  <ul className="space-y-2 max-h-64 overflow-y-auto">
-                    {approvedProducts.map((p) => (
-                      <li key={p.id} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id={`member-${p.id}`}
-                          checked={stagedMemberIds.has(p.id)}
-                          onChange={(e) => {
-                            const next = new Set(stagedMemberIds);
-                            if (e.target.checked) {
-                              next.add(p.id);
-                            } else {
-                              next.delete(p.id);
-                            }
-                            setStagedMemberIds(next);
-                          }}
-                          className="rounded border-gray-300"
-                        />
-                        <label htmlFor={`member-${p.id}`} className="text-sm cursor-pointer flex-1">
-                          {p.name}
-                          {p.colorway && (
-                            <span className="text-gray-500 ml-1">({p.colorway})</span>
-                          )}
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <input
+                      type="text"
+                      placeholder="Search by name, base, category, colorway…"
+                      value={membersSearch}
+                      onChange={(e) => setMembersSearch(e.target.value)}
+                      className="w-full px-3 py-2 mb-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+                    />
+                    <div className="flex gap-2 mb-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = new Set(stagedMemberIds);
+                          visibleProductIds.forEach((id) => next.add(id));
+                          setStagedMemberIds(next);
+                        }}
+                        className="px-3 py-1.5 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                      >
+                        Select all visible
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStagedMemberIds(new Set())}
+                        className="px-3 py-1.5 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                    <ul className="space-y-2 max-h-64 overflow-y-auto">
+                      {visibleProducts.length === 0 ? (
+                        <li className="text-sm text-gray-500 py-4">
+                          No products match the search.
+                        </li>
+                      ) : (
+                        visibleProducts.map((p) => (
+                          <li key={p.id} className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`member-${p.id}`}
+                              checked={stagedMemberIds.has(p.id)}
+                              onChange={(e) => {
+                                const next = new Set(stagedMemberIds);
+                                if (e.target.checked) {
+                                  next.add(p.id);
+                                } else {
+                                  next.delete(p.id);
+                                }
+                                setStagedMemberIds(next);
+                              }}
+                              className="rounded border-gray-300"
+                            />
+                            <label htmlFor={`member-${p.id}`} className="text-sm cursor-pointer flex-1">
+                              {p.name}
+                              {p.colorway && (
+                                <span className="text-gray-500 ml-1">({p.colorway})</span>
+                              )}
+                            </label>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </>
                 )}
               </div>
               <div className="p-4 border-t border-gray-100 flex gap-2">
