@@ -6,6 +6,7 @@ import App from '../App';
 export default function AuthGuard() {
   const [session, setSession] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  const [authCheckTrigger, setAuthCheckTrigger] = useState(0);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -33,7 +34,10 @@ export default function AuthGuard() {
 
   return (
     <LoginPage
-      onSuccess={() => supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))}
+      onSuccess={() => {
+        setAuthCheckTrigger((n) => n + 1);
+        supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
+      }}
     />
   );
 }

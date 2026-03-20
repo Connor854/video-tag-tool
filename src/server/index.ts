@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
@@ -10,6 +11,7 @@ import { appRouter } from './router.js';
 import { createContext } from './trpc.js';
 import { resolveWorkspaceFromRequest } from './resolveWorkspace.js';
 import { supabase } from '../lib/supabase.js';
+import { saveWorkspaceConnection } from '../lib/workspace.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.join(__dirname, '..', 'client');
@@ -27,6 +29,86 @@ app.use(
     createContext,
   }),
 );
+
+// Shopify OAuth callback — verify HMAC, exchange code for token, save to workspace_connections
+app.get('/auth/shopify/callback', async (req, res) => {
+  const appUrl = process.env['APP_URL'] ?? `http://localhost:${PORT}`;
+  const clientId = process.env['SHOPIFY_CLIENT_ID'];
+  const clientSecret = process.env['SHOPIFY_CLIENT_SECRET'];
+
+  if (!clientId || !clientSecret) {
+    console.error('Shopify OAuth: SHOPIFY_CLIENT_ID or SHOPIFY_CLIENT_SECRET not configured');
+    return res.redirect(`${appUrl}/?shopify_oauth=error&reason=config`);
+  }
+
+  const { shop, code, hmac, state } = req.query as Record<string, string | undefined>;
+  if (!shop || !code || !hmac || !state) {
+    return res.redirect(`${appUrl}/?shopify_oauth=error&reason=missing_params`);
+  }
+
+  // Verify HMAC: remove hmac, sort params alphabetically, hash with client secret
+  const queryString = req.originalUrl?.includes('?') ? req.originalUrl.split('?')[1] ?? '' : '';
+  const params = new URLSearchParams(queryString);
+  params.delete('hmac');
+  const sorted = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+  const computed = crypto.createHmac('sha256', clientSecret).update(sorted).digest('hex');
+  const hmacBuf = Buffer.from(hmac, 'hex');
+  const computedBuf = Buffer.from(computed, 'hex');
+  if (hmacBuf.length !== computedBuf.length || !crypto.timingSafeEqual(hmacBuf, computedBuf)) {
+    return res.redirect(`${appUrl}/?shopify_oauth=error&reason=hmac_invalid`);
+  }
+
+  // Validate shop hostname (e.g. store.myshopify.com)
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$/.test(shop)) {
+    return res.redirect(`${appUrl}/?shopify_oauth=error&reason=invalid_shop`);
+  }
+
+  const workspaceId = state;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(workspaceId)) {
+    return res.redirect(`${appUrl}/?shopify_oauth=error&reason=invalid_state`);
+  }
+
+  try {
+    const tokenUrl = `https://${shop}/admin/oauth/access_token`;
+    const body = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+    });
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Shopify token exchange failed:', response.status, text);
+      return res.redirect(`${appUrl}/?shopify_oauth=error&reason=token_exchange`);
+    }
+
+    const data = (await response.json()) as { access_token?: string };
+    if (!data.access_token) {
+      return res.redirect(`${appUrl}/?shopify_oauth=error&reason=no_token`);
+    }
+
+    await saveWorkspaceConnection(workspaceId, 'shopify', {
+      access_token: data.access_token,
+    }, {
+      store_url: shop,
+      connected_via: 'oauth',
+    });
+
+    return res.redirect(`${appUrl}/?shopify_oauth=success`);
+  } catch (err) {
+    console.error('Shopify OAuth callback error:', err);
+    return res.redirect(`${appUrl}/?shopify_oauth=error&reason=server`);
+  }
+});
 
 // Initialize Google Drive auth
 let driveAuth: any = null;

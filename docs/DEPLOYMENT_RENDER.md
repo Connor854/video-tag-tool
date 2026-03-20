@@ -35,6 +35,14 @@ For thumbnail/video proxy and media routes:
 |----------|----------|-------|
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | For media | Inline JSON string (full service account key). Not a file path. |
 
+For Shopify OAuth (Connect Shopify flow):
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `SHOPIFY_CLIENT_ID` | For OAuth | Shopify app client ID from Partner Dashboard |
+| `SHOPIFY_CLIENT_SECRET` | For OAuth | Shopify app client secret |
+| `APP_URL` | For OAuth | Public base URL (e.g. `https://your-app.onrender.com`). Used for OAuth callback redirect. |
+
 ---
 
 ## ffmpeg Requirement

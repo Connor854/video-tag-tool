@@ -427,16 +427,43 @@ export async function syncShopifyProducts(
       const existingId = existingByVariantId.get(variantIdStr);
 
       if (existingId) {
-        // Update existing row — do not include approved_at; preserve current value
-        const { error: updateErr } = await supabase
+        // Update existing row — scoped by workspace_id so we never touch another workspace's products
+        const { data: updatedRows, error: updateErr } = await supabase
           .from('products')
           .update(row)
-          .eq('id', existingId);
+          .eq('id', existingId)
+          .eq('workspace_id', workspaceId)
+          .select('id');
 
         if (updateErr) {
           console.error(`Failed to update product ${existingId}:`, updateErr.message);
-        } else {
+        } else if (updatedRows && updatedRows.length > 0) {
           updated++;
+        } else {
+          // Row not in our workspace (safety) — treat as insert
+          const { error: insertErr } = await supabase
+            .from('products')
+            .insert({ ...row, approved_at: null });
+
+          if (insertErr) {
+            if (insertErr.code === '23505') {
+              skipped.push({
+                shopifyProductTitle: productTitle,
+                shopifyVariantTitle: variantTitle,
+                reason: `Duplicate name "${productName}" — already exists in products table`,
+              });
+            } else {
+              console.error(`Failed to insert product "${productName}":`, insertErr.message);
+              skipped.push({
+                shopifyProductTitle: productTitle,
+                shopifyVariantTitle: variantTitle,
+                reason: `Insert error: ${insertErr.message}`,
+              });
+            }
+          } else {
+            inserted++;
+            insertedNames.add(productName.toLowerCase());
+          }
         }
       } else {
         // Insert new row — set approved_at to null (pending review)
