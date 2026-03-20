@@ -291,6 +291,9 @@ export async function syncDriveFiles(workspaceId: string): Promise<SyncResult> {
 
   console.log('Syncing Google Drive folder:', creds.googleDriveFolderId);
   const driveFiles = await listVideosInFolder(creds.googleDriveFolderId, creds.googleServiceAccountKey);
+  if (driveFiles.length === 0) {
+    console.log(`[Drive] WARNING: Discovery returned 0 videos for folder_id=${creds.googleDriveFolderId}. Check folder ID and sharing with service account.`);
+  }
   console.log(`Found ${driveFiles.length} videos in Drive`);
 
   // Check existing — scoped to workspace

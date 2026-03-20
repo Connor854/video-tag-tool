@@ -56,6 +56,7 @@ export async function listVideosInFolder(
   folderId: string,
   serviceAccountKey: string,
 ): Promise<DriveVideoWithPath[]> {
+  console.log(`[Drive] Starting crawl folderId=${folderId}`);
   const auth = await createDriveAuth(serviceAccountKey);
   const drive = google.drive({ version: 'v3', auth });
 
@@ -132,6 +133,10 @@ async function listVideosRecursive(
     listAllVideos(drive, folderId),
     listAllSubfolders(drive, folderId),
   ]);
+
+  if (currentPath === '') {
+    console.log(`[Drive] Root folder result: videos=${videosList.length} subfolders=${subfolders.length}`);
+  }
 
   for (const file of videosList) {
     videos.push({ file, folderPath: currentPath });
