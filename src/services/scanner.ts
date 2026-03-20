@@ -13,7 +13,8 @@ import { updateScanJobProgress, completeScanJob, abortScanJob } from '../server/
 const SYNC_BATCH_SIZE = 100; // Drive files to upsert per batch
 const ANALYSIS_DELAY_MS = 1000; // Base delay between video analyses per worker (rate limiting)
 const MAX_RETRIES = 2;
-const MAX_VIDEO_SIZE_BYTES = 1024 * 1024 * 1024; // 1 GB — larger videos fall back to thumbnail
+// Temporary stability: 200MB limit to reduce OOM risk on Render (was 1 GB)
+const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024;
 
 // Concurrent analysis workers. Start conservative — Gemini Flash allows 1000 RPM
 // but each analysis involves upload + generate + cleanup = ~3 API calls.
@@ -713,9 +714,10 @@ export async function analyzeOneVideo(
       usedFullVideo = true;
       analysisMode = 'full_video';
     } else {
-      // File exceeds upload size limit — thumbnail is the only option
+      // File exceeds memory-safety threshold — use thumbnail analysis to avoid OOM
       const sizeMB = Math.round(sizeBytes / 1024 / 1024);
-      console.log(`${fileName} is ${sizeMB}MB (limit ${Math.round(MAX_VIDEO_SIZE_BYTES / 1024 / 1024)}MB), using thumbnail analysis`);
+      const limitMB = Math.round(MAX_VIDEO_SIZE_BYTES / 1024 / 1024);
+      console.log(`${fileName} is ${sizeMB}MB (limit ${limitMB}MB, memory-safety), using thumbnail analysis`);
       const thumbnailUrl = `https://drive.google.com/thumbnail?id=${driveFileId}&sz=w640`;
       const thumbResponse = await fetch(thumbnailUrl);
       const thumbBuffer = Buffer.from(await thumbResponse.arrayBuffer());
@@ -1220,7 +1222,11 @@ export async function startScan(
     }
   } catch (err) {
     console.error('Scan error (completing with partial progress):', err);
-    await completeScanJob(jobId, analyzed + errors);
+    try {
+      await completeScanJob(jobId, analyzed + errors);
+    } catch (completeErr) {
+      console.error('Failed to complete scan job (job may remain running):', completeErr);
+    }
   }
   clearProductCache();
 
