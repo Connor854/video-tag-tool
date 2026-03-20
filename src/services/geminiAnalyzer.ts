@@ -250,18 +250,60 @@ const DEFAULT_RESULT: VideoAnalysisResult = {
 // Response parsing with validation
 // ============================================================
 
-function parseAnalysisResponse(text: string): VideoAnalysisResult {
-  let jsonStr = text.trim();
-  if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+/**
+ * Extract and clean JSON string from Gemini output that may include
+ * markdown fences, commentary, or minor formatting issues.
+ */
+function extractJsonString(text: string): string {
+  let s = text.trim();
+
+  // Strip markdown code fences (```json or ``` at start/end)
+  if (s.startsWith('```')) {
+    s = s.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/, '');
+  }
+  s = s.trim();
+
+  // If extra text surrounds JSON, extract the first { ... } block
+  const firstBrace = s.indexOf('{');
+  if (firstBrace >= 0) {
+    let depth = 0;
+    let end = -1;
+    for (let i = firstBrace; i < s.length; i++) {
+      const c = s[i];
+      if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end >= 0) {
+      s = s.slice(firstBrace, end + 1);
+    }
   }
 
-  const parsed = JSON.parse(jsonStr);
+  // Remove trailing commas before } or ] (invalid in strict JSON)
+  s = s.replace(/,(\s*[}\]])/g, '$1');
+
+  return s;
+}
+
+function parseAnalysisResponse(text: string): VideoAnalysisResult {
+  const jsonStr = extractJsonString(text);
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    throw new SyntaxError('Could not parse JSON from Gemini response');
+  }
 
   return {
-    description: parsed.description || DEFAULT_RESULT.description,
-    action_intent: parsed.action_intent || '',
-    transcript: parsed.transcript || '',
+    description: String(parsed.description ?? DEFAULT_RESULT.description),
+    action_intent: String(parsed.action_intent ?? ''),
+    transcript: String(parsed.transcript ?? ''),
     products: Array.isArray(parsed.products)
       ? parsed.products.map((p: Record<string, unknown>) => ({
           name: String(p.name || ''),
@@ -273,26 +315,28 @@ function parseAnalysisResponse(text: string): VideoAnalysisResult {
         }))
       : [],
     content_tags: Array.isArray(parsed.content_tags)
-      ? parsed.content_tags.filter((t: unknown) => typeof t === 'string')
+      ? (parsed.content_tags.filter((t: unknown) => typeof t === 'string') as string[])
       : [],
     moments: Array.isArray(parsed.moments)
       ? parsed.moments.map((m: Record<string, unknown>) => ({
           start_seconds: Number(m.start_seconds) || 0,
           end_seconds: Number(m.end_seconds) || 0,
-          label: String(m.label || ''),
-          description: String(m.description || ''),
-          products_visible: Array.isArray(m.products_visible) ? m.products_visible : [],
+          label: String(m.label ?? ''),
+          description: String(m.description ?? ''),
+          products_visible: Array.isArray(m.products_visible)
+            ? (m.products_visible.filter((x: unknown) => typeof x === 'string') as string[])
+            : [],
         }))
       : [],
-    scene: parsed.scene || 'Unknown',
-    lighting: parsed.lighting || 'natural',
-    audio_type: parsed.audio_type || 'ambient',
+    scene: String(parsed.scene ?? 'Unknown'),
+    lighting: String(parsed.lighting ?? 'natural'),
+    audio_type: String(parsed.audio_type ?? 'ambient'),
     people_count: typeof parsed.people_count === 'number' ? parsed.people_count : 0,
-    people_description: parsed.people_description || 'None',
+    people_description: String(parsed.people_description ?? 'None'),
     has_logo: Boolean(parsed.has_logo),
     has_packaging: Boolean(parsed.has_packaging),
     is_junk: Boolean(parsed.is_junk),
-    junk_reason: parsed.junk_reason || '',
+    junk_reason: String(parsed.junk_reason ?? ''),
     competitor_visible: Boolean(parsed.competitor_visible),
   };
 }
@@ -336,12 +380,12 @@ export async function analyzeVideoFull(
 
     return parseAnalysisResponse(result.response.text());
   } catch (err) {
-    // Do NOT silently return DEFAULT_RESULT for parse failures.
-    // Re-throw so the scanner retry loop can re-attempt the analysis.
+    // On parse failure: return fallback so scan continues; do not crash the job
     if (err instanceof SyntaxError) {
-      throw new Error(`Failed to parse Gemini response for ${fileName}: ${err.message}`);
+      console.warn(`Gemini parse failed for ${fileName}: ${err.message} — using fallback result`);
+      return DEFAULT_RESULT;
     }
-    throw err; // Re-throw for retry handling in scanner
+    throw err; // Re-throw non-parse errors for retry handling in scanner
   } finally {
     if (geminiFileName) {
       await fileManager.deleteFile(geminiFileName).catch((e) => {
