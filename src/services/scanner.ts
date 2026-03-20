@@ -296,22 +296,31 @@ export async function syncDriveFiles(workspaceId: string): Promise<SyncResult> {
   }
   console.log(`Found ${driveFiles.length} videos in Drive`);
 
-  // Check existing — scoped to workspace
+  // Check existing drive_ids GLOBALLY — drive_id is unique across all workspaces.
+  // Using workspace-scoped check + upsert caused FK violations when the same Drive
+  // folder was synced by another workspace: upsert overwrote videos.id, orphaning
+  // video_products rows that reference it.
   const { data: existing, error: fetchError } = await supabase
     .from('videos')
-    .select('drive_id')
-    .eq('workspace_id', workspaceId);
+    .select('drive_id, workspace_id');
 
   if (fetchError) {
     throw new Error(`Failed to fetch existing videos: ${fetchError.message}`);
   }
 
-  const existingIds = new Set((existing ?? []).map((r) => r.drive_id).filter(Boolean));
-  const newEntries = driveFiles.filter((entry) => !existingIds.has(entry.file.id));
+  const existingDriveIds = new Set((existing ?? []).map((r) => r.drive_id).filter(Boolean));
+  const newEntries = driveFiles.filter((entry) => !existingDriveIds.has(entry.file.id));
+  const alreadyInTable = driveFiles.length - newEntries.length;
+  const alreadyInWorkspace = (existing ?? []).filter((r) => r.workspace_id === workspaceId).length;
 
+  if (alreadyInTable > 0 && alreadyInTable !== alreadyInWorkspace) {
+    console.log(
+      `[Drive] ${alreadyInTable} videos already in DB (from this or another workspace); skipping to avoid FK conflict`,
+    );
+  }
   console.log(`${newEntries.length} new videos to sync`);
 
-  // Upsert metadata in batches
+  // INSERT only — never update existing rows (avoids overwriting id and orphaning video_products)
   for (let i = 0; i < newEntries.length; i += SYNC_BATCH_SIZE) {
     const batch = newEntries.slice(i, i + SYNC_BATCH_SIZE);
     const rows = batch.map(({ file, folderPath }) => {
@@ -337,7 +346,7 @@ export async function syncDriveFiles(workspaceId: string): Promise<SyncResult> {
       };
     });
 
-    const { error } = await supabase.from('videos').upsert(rows, { onConflict: 'drive_id' });
+    const { error } = await supabase.from('videos').insert(rows);
     if (error) {
       console.error(`Sync batch error:`, error);
     }
@@ -346,7 +355,7 @@ export async function syncDriveFiles(workspaceId: string): Promise<SyncResult> {
   return {
     totalInDrive: driveFiles.length,
     newFiles: newEntries.length,
-    alreadySynced: existingIds.size,
+    alreadySynced: alreadyInWorkspace,
   };
 }
 
