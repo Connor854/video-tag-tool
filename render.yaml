@@ -1,0 +1,10 @@
+# Render Blueprint — deploy the full app (frontend + backend) as a single web service.
+# See docs/DEPLOYMENT_RENDER.md for setup instructions and env vars.
+
+services:
+  - type: web
+    name: nakie-video-search
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /

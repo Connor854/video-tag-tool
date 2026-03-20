@@ -1,0 +1,715 @@
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Save, Play, Loader2, CheckCircle, AlertCircle, RefreshCw, ShieldCheck, Check, Pencil } from 'lucide-react';
+import { trpc } from '../trpc';
+import PipelineMonitor from './PipelineMonitor';
+
+type ProductStatus = 'pending' | 'approved' | 'all';
+
+interface ProductRow {
+  id: string;
+  name: string;
+  base_product: string;
+  category: string;
+  colorway: string | null;
+  image_url: string | null;
+  active: boolean;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AdminPageProps {
+  onBack: () => void;
+}
+
+export default function AdminPage({ onBack }: AdminPageProps) {
+  const [adminSecret, setAdminSecret] = useState(() => localStorage.getItem('adminSecret') ?? '');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [driveFolderId, setDriveFolderId] = useState('');
+  const [serviceAccountKey, setServiceAccountKey] = useState('');
+  const [shopifyStoreUrl, setShopifyStoreUrl] = useState('');
+  const [shopifyClientId, setShopifyClientId] = useState('');
+  const [shopifyClientSecret, setShopifyClientSecret] = useState('');
+  const [shopifyAccessToken, setShopifyAccessToken] = useState('');
+  const [saveMsg, setSaveMsg] = useState('');
+  const [initialized, setInitialized] = useState(false);
+
+  const handleAdminSecretChange = (value: string) => {
+    setAdminSecret(value);
+    if (value) {
+      localStorage.setItem('adminSecret', value);
+    } else {
+      localStorage.removeItem('adminSecret');
+    }
+  };
+
+  const settingsQuery = trpc.admin.getSettings.useQuery();
+
+  useEffect(() => {
+    if (settingsQuery.data && !initialized) {
+      setGeminiApiKey(settingsQuery.data.geminiApiKey);
+      setDriveFolderId(settingsQuery.data.googleDriveFolderId);
+      setServiceAccountKey(settingsQuery.data.googleServiceAccountKey);
+      setShopifyStoreUrl(settingsQuery.data.shopifyStoreUrl);
+      setShopifyClientId(settingsQuery.data.shopifyClientId);
+      setShopifyClientSecret(settingsQuery.data.shopifyClientSecret);
+      setShopifyAccessToken(settingsQuery.data.shopifyAccessToken);
+      setInitialized(true);
+    }
+  }, [settingsQuery.data, initialized]);
+
+  const saveMutation = trpc.admin.saveSettings.useMutation({
+    onSuccess: () => {
+      setSaveMsg('Settings saved!');
+      setTimeout(() => setSaveMsg(''), 3000);
+    },
+  });
+
+  const scanMutation = trpc.admin.startScan.useMutation();
+  const scanStatusQuery = trpc.admin.scanStatus.useQuery(undefined, {
+    refetchInterval: scanMutation.data?.success ? 2000 : false,
+  });
+
+  const utils = trpc.useUtils();
+  const shopifySyncMutation = trpc.admin.syncShopify.useMutation({
+    onSuccess: () => utils.admin.listProducts.invalidate(),
+  });
+  const validateMutation = trpc.admin.validateMatches.useMutation();
+
+  const [catalogStatus, setCatalogStatus] = useState<ProductStatus>('pending');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogCategory, setCatalogCategory] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<Partial<Pick<ProductRow, 'name' | 'base_product' | 'category' | 'colorway'>>>({});
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  const listProductsQuery = trpc.admin.listProducts.useQuery({
+    status: catalogStatus,
+    search: catalogSearch || undefined,
+    category: catalogCategory || undefined,
+  });
+  const updateProductMutation = trpc.admin.updateProduct.useMutation({
+    onMutate: () => setCatalogError(null),
+    onSuccess: (data) => {
+      if (data?.success === false) {
+        setCatalogError(data.error ?? 'Update failed');
+      } else {
+        setCatalogError(null);
+        utils.admin.listProducts.invalidate();
+        setEditingId(null);
+        setEditDraft({});
+      }
+    },
+    onError: (err) => setCatalogError(err.message ?? 'Update failed'),
+  });
+  const approveProductMutation = trpc.admin.approveProduct.useMutation({
+    onMutate: () => setCatalogError(null),
+    onSuccess: (data) => {
+      if (data?.success === false) {
+        setCatalogError(data.error ?? 'Approve failed');
+      } else {
+        setCatalogError(null);
+        utils.admin.listProducts.invalidate();
+      }
+    },
+    onError: (err) => setCatalogError(err.message ?? 'Approve failed'),
+  });
+  const approveProductsMutation = trpc.admin.approveProducts.useMutation({
+    onMutate: () => setCatalogError(null),
+    onSuccess: (data) => {
+      if (data?.success === false) {
+        setCatalogError(data.error ?? 'Bulk approve failed');
+      } else {
+        setCatalogError(null);
+        utils.admin.listProducts.invalidate();
+      }
+    },
+    onError: (err) => setCatalogError(err.message ?? 'Bulk approve failed'),
+  });
+
+  const products = (listProductsQuery.data?.products ?? []) as ProductRow[];
+  const pendingIds = products.filter((p) => !p.approved_at).map((p) => p.id);
+
+  const handleEditStart = (p: ProductRow) => {
+    setCatalogError(null);
+    setEditingId(p.id);
+    setEditDraft({ name: p.name, base_product: p.base_product, category: p.category, colorway: p.colorway });
+  };
+  const handleEditSave = () => {
+    if (!editingId || !editDraft.name?.trim()) return;
+    const payload: { id: string; name?: string; base_product?: string; category?: string; colorway?: string | null } = {
+      id: editingId,
+    };
+    if (editDraft.name !== undefined) payload.name = editDraft.name;
+    if (editDraft.base_product !== undefined) payload.base_product = editDraft.base_product;
+    if (editDraft.category !== undefined) payload.category = editDraft.category;
+    if (editDraft.colorway !== undefined) payload.colorway = editDraft.colorway;
+    updateProductMutation.mutate(payload);
+  };
+  const handleEditCancel = () => {
+    setCatalogError(null);
+    setEditingId(null);
+    setEditDraft({});
+  };
+  const handleApproveAll = () => {
+    if (pendingIds.length === 0) return;
+    approveProductsMutation.mutate({ ids: pendingIds });
+  };
+
+  const handleSave = () => {
+    saveMutation.mutate({
+      geminiApiKey,
+      googleDriveFolderId: driveFolderId,
+      googleServiceAccountKey: serviceAccountKey,
+      shopifyStoreUrl,
+      shopifyClientId,
+      shopifyClientSecret,
+      shopifyAccessToken,
+    });
+  };
+
+  const handleScan = () => {
+    scanMutation.mutate();
+  };
+
+  const scanStatus = scanStatusQuery.data;
+
+  return (
+    <div className="min-h-screen bg-cream">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 mb-6 cursor-pointer"
+        >
+          <ArrowLeft size={16} />
+          Back to search
+        </button>
+
+        <h1 className="font-heading text-3xl font-bold text-gray-800 mb-8">Admin Settings</h1>
+
+        {/* Pipeline Monitor */}
+        <PipelineMonitor />
+
+        {/* Admin Auth */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+          <h2 className="font-heading text-xl font-semibold text-gray-800 mb-4">Admin Access</h2>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Admin Secret
+            </label>
+            <input
+              type="password"
+              value={adminSecret}
+              onChange={(e) => handleAdminSecretChange(e.target.value)}
+              placeholder="Enter admin secret to enable write operations"
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Required to save settings and start scans
+            </p>
+          </div>
+        </div>
+
+        {/* Settings Form */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+          <h2 className="font-heading text-xl font-semibold text-gray-800 mb-4">API Configuration</h2>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Gemini API Key
+              </label>
+              <input
+                type="password"
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                placeholder="Enter your Gemini API key"
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Google Drive Folder ID
+              </label>
+              <input
+                type="text"
+                value={driveFolderId}
+                onChange={(e) => setDriveFolderId(e.target.value)}
+                placeholder="e.g., 1ABC123def456"
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                The folder ID from the Google Drive URL
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Google Service Account Key (JSON)
+              </label>
+              <textarea
+                value={serviceAccountKey}
+                onChange={(e) => setServiceAccountKey(e.target.value)}
+                placeholder='Paste your service account JSON key here or enter file path'
+                rows={4}
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+              />
+            </div>
+
+            <hr className="border-gray-100" />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Shopify Store URL
+              </label>
+              <input
+                type="text"
+                value={shopifyStoreUrl}
+                onChange={(e) => setShopifyStoreUrl(e.target.value)}
+                placeholder="your-store.myshopify.com"
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Your Shopify store domain (e.g., nakie.myshopify.com)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Shopify Client ID
+              </label>
+              <input
+                type="text"
+                value={shopifyClientId}
+                onChange={(e) => setShopifyClientId(e.target.value)}
+                placeholder="e.g., 1a2b3c4d5e6f..."
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                From Dev Dashboard &rarr; your app &rarr; Settings &rarr; Client credentials
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Shopify Client Secret
+              </label>
+              <input
+                type="password"
+                value={shopifyClientSecret}
+                onChange={(e) => setShopifyClientSecret(e.target.value)}
+                placeholder="shpss_..."
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                From Dev Dashboard &rarr; your app &rarr; Settings &rarr; Client credentials
+              </p>
+            </div>
+
+            <details className="text-sm">
+              <summary className="cursor-pointer text-xs text-gray-400 hover:text-gray-600">
+                Legacy: raw access token (for old custom apps only)
+              </summary>
+              <div className="mt-2">
+                <input
+                  type="password"
+                  value={shopifyAccessToken}
+                  onChange={(e) => setShopifyAccessToken(e.target.value)}
+                  placeholder="shpat_..."
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Only needed if you have an existing custom app with a permanent access token
+                </p>
+              </div>
+            </details>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSave}
+                disabled={saveMutation.isPending}
+                className="flex items-center gap-2 px-5 py-2.5 bg-nakie-green text-white rounded-lg text-sm font-medium hover:bg-nakie-green/90 disabled:opacity-50 transition-colors cursor-pointer"
+              >
+                {saveMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Save Settings
+              </button>
+              {saveMsg && (
+                <span className="flex items-center gap-1 text-sm text-green-600">
+                  <CheckCircle size={14} />
+                  {saveMsg}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Scan Control */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+          <h2 className="font-heading text-xl font-semibold text-gray-800 mb-4">
+            Google Drive Scanner
+          </h2>
+
+          <p className="text-sm text-gray-600 mb-4">
+            Scan your Google Drive folder for new videos and analyze them with Gemini AI.
+          </p>
+
+          {scanStatus?.isScanning && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+                <span>Scanning... {scanStatus.currentFile}</span>
+                <span>{scanStatus.progress} / {scanStatus.total}</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div
+                  className="bg-nakie-teal h-2 rounded-full transition-all"
+                  style={{
+                    width: scanStatus.total > 0
+                      ? `${(scanStatus.progress / scanStatus.total) * 100}%`
+                      : '0%',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {scanStatus?.error && (
+            <div className="flex items-center gap-2 text-sm text-red-600 mb-4">
+              <AlertCircle size={14} />
+              {scanStatus.error}
+            </div>
+          )}
+
+          <button
+            onClick={handleScan}
+            disabled={scanStatus?.isScanning || scanMutation.isPending}
+            className="flex items-center gap-2 px-5 py-2.5 bg-nakie-teal text-white rounded-lg text-sm font-medium hover:bg-nakie-teal/90 disabled:opacity-50 transition-colors cursor-pointer"
+          >
+            {scanStatus?.isScanning ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Play size={16} />
+            )}
+            {scanStatus?.isScanning ? 'Scanning...' : 'Start Scan'}
+          </button>
+        </div>
+
+        {/* Shopify Sync & Validation */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+          <h2 className="font-heading text-xl font-semibold text-gray-800 mb-4">
+            Product Matching
+          </h2>
+
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-gray-600 mb-3">
+                Sync products from Shopify to populate product images, then run image-based validation to promote confident matches from amber to green.
+              </p>
+
+              <div className="flex items-center gap-3 mb-3">
+                <button
+                  onClick={() => shopifySyncMutation.mutate()}
+                  disabled={shopifySyncMutation.isPending}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {shopifySyncMutation.isPending ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={16} />
+                  )}
+                  Sync Shopify Products
+                </button>
+
+                <button
+                  onClick={() => validateMutation.mutate()}
+                  disabled={validateMutation.isPending}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {validateMutation.isPending ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <ShieldCheck size={16} />
+                  )}
+                  Validate Matches
+                </button>
+              </div>
+
+              {shopifySyncMutation.data?.success && 'inserted' in shopifySyncMutation.data && (() => {
+                const syncData = shopifySyncMutation.data as {
+                  success: boolean;
+                  totalShopifyProducts: number;
+                  totalVariants: number;
+                  inserted: number;
+                  updated: number;
+                  skippedCount: number;
+                  skipped: { product: string; variant: string; reason: string }[];
+                };
+                return (
+                  <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 mb-2 space-y-2">
+                    <div>
+                      Synced {syncData.totalShopifyProducts} Shopify products
+                      ({syncData.totalVariants} variants).
+                      Inserted: <span className="font-medium text-green-700">{syncData.inserted}</span>.
+                      Updated: <span className="font-medium text-blue-700">{syncData.updated}</span>.
+                      {syncData.skippedCount > 0 && (
+                        <> Skipped: <span className="font-medium text-amber-700">{syncData.skippedCount}</span>.</>
+                      )}
+                    </div>
+                    {syncData.skipped.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+                          Show skipped variants ({syncData.skippedCount})
+                        </summary>
+                        <ul className="mt-1 space-y-1 text-xs text-gray-500 max-h-48 overflow-y-auto">
+                          {syncData.skipped.map((s, i) => (
+                            <li key={i} className="border-l-2 border-amber-300 pl-2">
+                              <span className="font-medium">{s.product}</span>
+                              {s.variant !== 'Default Title' && <> / {s.variant}</>}
+                              <br />
+                              <span className="text-gray-400">{s.reason}</span>
+                            </li>
+                          ))}
+                          {syncData.skippedCount > syncData.skipped.length && (
+                            <li className="text-gray-400 italic">
+                              ... and {syncData.skippedCount - syncData.skipped.length} more
+                            </li>
+                          )}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {shopifySyncMutation.data && !shopifySyncMutation.data.success && (
+                <div className="flex items-center gap-2 text-sm text-red-600 mb-2">
+                  <AlertCircle size={14} />
+                  {shopifySyncMutation.data.error}
+                </div>
+              )}
+
+              {shopifySyncMutation.isError && (
+                <div className="flex items-center gap-2 text-sm text-red-600 mb-2">
+                  <AlertCircle size={14} />
+                  {shopifySyncMutation.error?.message ?? 'Shopify sync request failed'}
+                </div>
+              )}
+
+              {validateMutation.data?.success && 'total' in validateMutation.data && (
+                <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 space-y-1">
+                  <div>
+                    Checked <span className="font-medium">{validateMutation.data.total}</span> amber matches
+                    {validateMutation.data.source && <span className="text-gray-400"> (source: {validateMutation.data.source})</span>}
+                  </div>
+                  <div>
+                    Promoted to green: <span className="font-medium text-green-700">{validateMutation.data.promoted}</span>.
+                    Stayed amber: <span className="font-medium text-amber-700">{validateMutation.data.rejected}</span>.
+                    Skipped: {validateMutation.data.skipped}.
+                    {validateMutation.data.errors > 0 && <span className="text-red-600"> Errors: {validateMutation.data.errors}.</span>}
+                  </div>
+                </div>
+              )}
+
+              {validateMutation.data && !validateMutation.data.success && (
+                <div className="flex items-center gap-2 text-sm text-red-600">
+                  <AlertCircle size={14} />
+                  {validateMutation.data.error}
+                </div>
+              )}
+
+              {validateMutation.isError && (
+                <div className="flex items-center gap-2 text-sm text-red-600">
+                  <AlertCircle size={14} />
+                  {validateMutation.error?.message ?? 'Validation request failed'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Product Catalog */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+          <h2 className="font-heading text-xl font-semibold text-gray-800 mb-4">
+            Product Catalog
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Review and approve products synced from Shopify. Only approved products are used for video analysis and filters.
+          </p>
+
+          <div className="flex flex-wrap gap-3 mb-4">
+            <select
+              value={catalogStatus}
+              onChange={(e) => setCatalogStatus(e.target.value as ProductStatus)}
+              className="px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+            >
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="all">All</option>
+            </select>
+            <input
+              type="text"
+              placeholder="Search by name"
+              value={catalogSearch}
+              onChange={(e) => setCatalogSearch(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-gray-200 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+            />
+            <input
+              type="text"
+              placeholder="Category"
+              value={catalogCategory}
+              onChange={(e) => setCatalogCategory(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-gray-200 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-nakie-teal/30"
+            />
+            {pendingIds.length > 0 && (
+              <button
+                onClick={handleApproveAll}
+                disabled={approveProductsMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 cursor-pointer"
+              >
+                {approveProductsMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Approve all ({pendingIds.length})
+              </button>
+            )}
+          </div>
+
+          {catalogError && (
+            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4">
+              <AlertCircle size={16} className="flex-shrink-0" />
+              {catalogError}
+            </div>
+          )}
+
+          {listProductsQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-8">
+              <Loader2 size={16} className="animate-spin" />
+              Loading products…
+            </div>
+          ) : products.length === 0 ? (
+            <p className="text-sm text-gray-500 py-8">
+              {catalogSearch.trim() || catalogCategory.trim()
+                ? 'No products match the current filters.'
+                : catalogStatus === 'all'
+                  ? 'No products yet. Sync products from Shopify above to start reviewing your catalog.'
+                  : catalogStatus === 'pending'
+                    ? 'No pending products. Everything currently synced has been approved.'
+                    : 'No approved products yet. Sync from Shopify above and approve them in the catalog.'}
+            </p>
+          ) : (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 w-12">Img</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Name</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Base</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Category</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Colorway</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 w-20">Status</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 w-28">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.map((p) => (
+                      <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                        <td className="px-3 py-2">
+                          {p.image_url ? (
+                            <img src={p.image_url} alt="" className="w-10 h-10 object-cover rounded" />
+                          ) : (
+                            <span className="w-10 h-10 block bg-gray-100 rounded text-gray-400 text-xs flex items-center justify-center">—</span>
+                          )}
+                        </td>
+                        {editingId === p.id ? (
+                          <>
+                            <td className="px-3 py-2" colSpan={5}>
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  value={editDraft.name ?? ''}
+                                  onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                                  placeholder="Name"
+                                  className="px-2 py-1.5 rounded border border-gray-200 text-sm"
+                                />
+                                <input
+                                  value={editDraft.base_product ?? ''}
+                                  onChange={(e) => setEditDraft((d) => ({ ...d, base_product: e.target.value }))}
+                                  placeholder="Base product"
+                                  className="px-2 py-1.5 rounded border border-gray-200 text-sm"
+                                />
+                                <input
+                                  value={editDraft.category ?? ''}
+                                  onChange={(e) => setEditDraft((d) => ({ ...d, category: e.target.value }))}
+                                  placeholder="Category"
+                                  className="px-2 py-1.5 rounded border border-gray-200 text-sm"
+                                />
+                                <input
+                                  value={editDraft.colorway ?? ''}
+                                  onChange={(e) => setEditDraft((d) => ({ ...d, colorway: e.target.value || null }))}
+                                  placeholder="Colorway"
+                                  className="px-2 py-1.5 rounded border border-gray-200 text-sm"
+                                />
+                              </div>
+                            </td>
+                            <td className="px-3 py-2" colSpan={1}>
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={handleEditSave}
+                                  disabled={updateProductMutation.isPending || !editDraft.name?.trim()}
+                                  className="flex items-center gap-1 px-2 py-1 bg-nakie-green text-white rounded text-xs font-medium disabled:opacity-50 cursor-pointer"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={handleEditCancel}
+                                  className="flex items-center gap-1 px-2 py-1 border border-gray-200 rounded text-xs cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-3 py-2 font-medium">{p.name}</td>
+                            <td className="px-3 py-2 text-gray-600">{p.base_product}</td>
+                            <td className="px-3 py-2 text-gray-600">{p.category}</td>
+                            <td className="px-3 py-2 text-gray-600">{p.colorway ?? '—'}</td>
+                            <td className="px-3 py-2">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${p.approved_at ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {p.approved_at ? 'Approved' : 'Pending'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex gap-1">
+                                {!p.approved_at && (
+                                  <button
+                                    onClick={() => approveProductMutation.mutate({ id: p.id })}
+                                    disabled={approveProductMutation.isPending}
+                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded cursor-pointer"
+                                    title="Approve"
+                                  >
+                                    <Check size={14} />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleEditStart(p)}
+                                  className="p-1.5 text-gray-500 hover:bg-gray-100 rounded cursor-pointer"
+                                  title="Edit"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

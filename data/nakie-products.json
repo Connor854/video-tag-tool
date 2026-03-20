@@ -1,0 +1,112 @@
+{
+  "lastUpdated": "2026-03-12",
+  "source": "https://nakie.co",
+  "categories": {
+    "hammocks": {
+      "name": "Hammocks",
+      "products": [
+        {"name": "River Blue - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "river blue", "recycled"]},
+        {"name": "Forest Green - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "forest green", "recycled"]},
+        {"name": "Mulberry Purple - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "mulberry purple", "recycled"]},
+        {"name": "Golden Mango - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "golden mango", "recycled"]},
+        {"name": "Kasey Rainbow - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "kasey rainbow", "recycled"]},
+        {"name": "Sky Blue - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "sky blue", "recycled"]},
+        {"name": "Olive Green - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "olive green", "recycled"]},
+        {"name": "Merlot Red - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "merlot red", "recycled"]},
+        {"name": "Wild Fiesta - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "wild fiesta", "recycled"]},
+        {"name": "Charlotte Wensley - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "charlotte wensley", "recycled", "sold out"]},
+        {"name": "Sunburnt Orange - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "sunburnt orange", "recycled"]},
+        {"name": "Twilight Blue - Recycled Hammock with Straps", "price": "$129.95", "tags": ["hammock", "twilight blue", "recycled"]},
+        {"name": "Cricket Australia Recycled Hammock with Straps", "price": "$139.95", "tags": ["hammock", "cricket australia"]}
+      ]
+    },
+    "beach_towels": {
+      "name": "Beach Towels",
+      "products": [
+        {"name": "Retro Shores - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "retro shores", "sand-free"]},
+        {"name": "Ocean Breeze - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "ocean breeze", "sand-free"]},
+        {"name": "Underwater Magic - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "underwater magic", "sand-free"]},
+        {"name": "Sound of Summer - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "sound of summer", "sand-free"]},
+        {"name": "Holiday Dreams - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "holiday dreams", "sand-free"]},
+        {"name": "Salty Waves - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "salty waves", "sand-free"]},
+        {"name": "Rosy Tides - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "rosy tides", "sand-free"]},
+        {"name": "Kasey Rainbow - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "kasey rainbow", "sand-free"]},
+        {"name": "Eucalyptus Green - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "eucalyptus green", "sand-free"]},
+        {"name": "Toucan Bay - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "toucan bay", "sand-free"]},
+        {"name": "Cricket Australia - Recycled Sand Free Beach Towel", "price": "$84.95", "tags": ["beach towel", "cricket australia"]},
+        {"name": "Daintree Green - Recycled Sand Free Beach Towel", "price": "$79.95", "tags": ["beach towel", "daintree green", "sand-free"]}
+      ]
+    },
+    "picnic_blankets": {
+      "name": "Picnic Blankets",
+      "products": [
+        {"name": "Sound of Summer - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "sound of summer"]},
+        {"name": "Kasey Rainbow - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "kasey rainbow"]},
+        {"name": "Happy Days - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "happy days"]},
+        {"name": "Holiday Dreams - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "holiday dreams"]},
+        {"name": "Charlotte Wensley - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "charlotte wensley"]},
+        {"name": "Starry Nights - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "starry nights"]},
+        {"name": "Floating Lotus - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "floating lotus"]},
+        {"name": "Autumn Leaves - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "autumn leaves"]},
+        {"name": "Turkish Delight - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "turkish delight"]},
+        {"name": "Eucalyptus Green - Recycled Picnic Blanket", "price": "$129.95", "tags": ["picnic blanket", "eucalyptus green", "sold out"]}
+      ]
+    },
+    "puffy_blankets": {
+      "name": "Puffy Blankets",
+      "products": [
+        {"name": "Olive Green - Sustainable Down Puffy Blanket", "price": "$149.95", "tags": ["puffy blanket", "olive green"]},
+        {"name": "Deep Ocean Blue - Sustainable Down Puffy Blanket", "price": "$149.95", "tags": ["puffy blanket", "deep ocean blue"]},
+        {"name": "Charlotte Wensley - Sustainable Down Puffy Blanket", "price": "$149.95", "tags": ["puffy blanket", "charlotte wensley"]},
+        {"name": "Mountain Blue - Sustainable Down Puffy Blanket", "price": "$149.95", "tags": ["puffy blanket", "mountain blue"]},
+        {"name": "Kasey Rainbow - Sustainable Down Puffy Blanket", "price": "$149.95", "tags": ["puffy blanket", "kasey rainbow"]},
+        {"name": "Horizon Green - Sustainable Down Puffy Blanket", "price": "$149.95", "tags": ["puffy blanket", "horizon green"]}
+      ]
+    },
+    "hooded_towels": {
+      "name": "Hooded Towels",
+      "products": [
+        {"name": "Rosy Tides - Hooded Towel Recycled Sand Free", "price": "$129.95", "tags": ["hooded towel", "rosy tides", "adult"]},
+        {"name": "Sound of Summer - Hooded Towel Recycled Sand Free", "price": "$129.95", "tags": ["hooded towel", "sound of summer", "adult"]},
+        {"name": "Kasey Rainbow - Hooded Towel Recycled Sand Free", "price": "$129.95", "tags": ["hooded towel", "kasey rainbow", "adult"]},
+        {"name": "Retro Shores - Hooded Towel Recycled Sand Free", "price": "$129.95", "tags": ["hooded towel", "retro shores", "adult"]},
+        {"name": "Ocean Breeze - Hooded Towel Recycled Sand Free", "price": "$129.95", "tags": ["hooded towel", "ocean breeze", "adult"]},
+        {"name": "Salty Waves - Hooded Towel Recycled Sand Free", "price": "$129.95", "tags": ["hooded towel", "salty waves", "adult"]},
+        {"name": "Rosy Tides - Kids Hooded Towel Recycled Sand Free", "price": "$99.95", "tags": ["hooded towel", "rosy tides", "kids"]},
+        {"name": "Sound of Summer - Kids Hooded Towel Recycled Sand Free", "price": "$99.95", "tags": ["hooded towel", "sound of summer", "kids"]},
+        {"name": "Salty Waves - Kids Hooded Towel Recycled Sand Free", "price": "$99.95", "tags": ["hooded towel", "salty waves", "kids"]},
+        {"name": "Kasey Rainbow - Kids Hooded Towel Recycled Sand Free", "price": "$99.95", "tags": ["hooded towel", "kasey rainbow", "kids"]},
+        {"name": "Retro Shores - Kids Hooded Towel Recycled Sand Free", "price": "$99.95", "tags": ["hooded towel", "retro shores", "kids"]},
+        {"name": "Ocean Breeze - Kids Hooded Towel Recycled Sand Free", "price": "$99.95", "tags": ["hooded towel", "ocean breeze", "kids"]}
+      ]
+    },
+    "tote_bags": {
+      "name": "Tote Bags",
+      "products": [
+        {"name": "Retro Shores - Recycled Tote Bag", "price": "$129.95", "tags": ["tote bag", "retro shores"]},
+        {"name": "Classic Navy - Recycled Tote Bag", "price": "$129.95", "tags": ["tote bag", "classic navy"]},
+        {"name": "Strawberry Fields - Recycled Tote Bag", "price": "$129.95", "tags": ["tote bag", "strawberry fields"]},
+        {"name": "Midnight Black - Recycled Tote Bag", "price": "$129.95", "tags": ["tote bag", "midnight black"]},
+        {"name": "Sandy Trails - Recycled Tote Bag", "price": "$129.95", "tags": ["tote bag", "sandy trails"]},
+        {"name": "Kasey Rainbow - Recycled Tote Bag", "price": "$129.95", "tags": ["tote bag", "kasey rainbow"]}
+      ]
+    },
+    "protein_bars": {
+      "name": "Protein Bars",
+      "products": [
+        {"name": "Original Protein Bar - 3 Bar Trial Pack", "price": "$19.95", "tags": ["protein bar", "original", "sold out"]},
+        {"name": "Protein Bar - 6 Bar Trial Pack", "price": "$31.27", "tags": ["protein bar", "choc coating", "sold out"]},
+        {"name": "Variety Box - Protein Bar", "price": "$60.69", "tags": ["protein bar", "variety", "sold out"]},
+        {"name": "Berry Ripe - Protein Bar", "price": "$60.69", "tags": ["protein bar", "berry ripe", "sold out"]},
+        {"name": "Berry Ripe with Choc Coating - Protein Bar", "price": "$60.69", "tags": ["protein bar", "berry ripe", "choc coating", "sold out"]},
+        {"name": "Peanut Butter Caramel - Protein Bar", "price": "$60.69", "tags": ["protein bar", "peanut butter caramel", "sold out"]},
+        {"name": "Peanut Butter Caramel with Choc Coating - Protein Bar", "price": "$60.69", "tags": ["protein bar", "peanut butter caramel", "choc coating", "sold out"]},
+        {"name": "Double Choc Fudge - Protein Bar", "price": "$60.69", "tags": ["protein bar", "double choc fudge", "sold out"]},
+        {"name": "Double Choc Fudge with Choc Coating - Protein Bar", "price": "$60.69", "tags": ["protein bar", "double choc fudge", "choc coating", "sold out"]}
+      ]
+    }
+  },
+  "nrlTeams": ["Warriors", "Panthers", "Raiders", "Broncos", "Tigers", "Bulldogs", "Storm", "Rabbitohs", "Roosters", "Eels", "Sharks", "Cowboys", "Sea Eagles", "Dragons", "Dolphins", "Knights", "Titans"],
+  "colorPalette": ["River Blue", "Forest Green", "Mulberry Purple", "Golden Mango", "Kasey Rainbow", "Sky Blue", "Olive Green", "Merlot Red", "Wild Fiesta", "Charlotte Wensley", "Sunburnt Orange", "Twilight Blue", "Retro Shores", "Ocean Breeze", "Underwater Magic", "Sound of Summer", "Holiday Dreams", "Salty Waves", "Rosy Tides", "Eucalyptus Green", "Toucan Bay", "Daintree Green", "Starry Nights", "Floating Lotus", "Autumn Leaves", "Turkish Delight", "Deep Ocean Blue", "Mountain Blue", "Horizon Green", "Classic Navy", "Strawberry Fields", "Midnight Black", "Sandy Trails", "Peanut Butter Caramel", "Berry Ripe", "Double Choc Fudge"],
+  "keySellingPoints": ["Recycled materials", "Sand-free technology", "Sustainable down alternative", "Lifetime warranty", "Free shipping worldwide", "60-day money back guarantee", "B-corp certified", "Oeko-Tex Standard 100 certified"]
+}
