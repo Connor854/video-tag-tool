@@ -35,6 +35,8 @@ export default function AdminPage({ onBack }: AdminPageProps) {
   const [shopifyOAuthMsg, setShopifyOAuthMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [initialized, setInitialized] = useState(false);
 
+  const utils = trpc.useUtils();
+
   // Handle Shopify OAuth callback query params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -91,7 +93,6 @@ export default function AdminPage({ onBack }: AdminPageProps) {
     refetchInterval: scanMutation.data?.success ? 2000 : false,
   });
 
-  const utils = trpc.useUtils();
   const [connectShopifyPending, setConnectShopifyPending] = useState(false);
   const handleConnectShopify = async () => {
     const shop = shopifyStoreUrl.trim();
